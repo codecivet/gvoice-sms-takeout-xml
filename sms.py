@@ -5,8 +5,12 @@ import phonenumbers
 import dateutil.parser
 import time
 from io import open  # adds emoji support
+from pathlib import Path
 
 sms_backup_filename = "./gvoice-all.xml"
+sms_backup_path = Path(sms_backup_filename)
+# Clear file if it already exists
+sms_backup_path.open("w").close()
 print("New file will be saved to " + sms_backup_filename)
 
 
@@ -61,11 +65,15 @@ def write_sms_messages(file, messages_raw):
 
     sms_backup_file = open(sms_backup_filename, "a", encoding="utf8")
     for message in messages_raw:
-        # Check if message has an image in it
-        images = message.find_all("img")
-        if images:
-            # Oops should be mms
-            write_mms_messages([message.find_all("cite")], [message])
+        # Check if message has an image in it and treat as mms if so
+        if message.find_all("img"):
+            # Sometimes these messages don't fill out the tel field. Use a sensible default.
+            participants_raw = message.find_all("cite")
+            for participant in participants_raw:
+                if not participant.a["href"][4:0]:
+                    participant.a["href"] = f'tel:{sms_values["phone"]}'
+
+            write_mms_messages([participants_raw], [message])
             continue
 
         sms_values["type"] = get_message_type(message)
@@ -87,18 +95,35 @@ def write_mms_messages(participants_raw, messages_raw):
     sms_backup_file = open(sms_backup_filename, "a", encoding="utf8")
 
     participants = get_participant_phone_numbers(participants_raw)
-    mms_values = {"participants": "~".join(participants)}
+    participants_text = "~".join(participants)
 
-    for i in range(len(messages_raw)):
-        sender = get_mms_sender(messages_raw[i])
+    for message in messages_raw:
+        sender = get_mms_sender(message)
         sent_by_me = sender not in participants
 
-        mms_values["type"] = get_message_type(messages_raw[i])
-        mms_values["message"] = get_message_text(messages_raw[i])
-        mms_values["time"] = get_time_unix(messages_raw[i])
-        mms_values["participants_xml"] = ""
-        mms_values["msg_box"] = 2 if sent_by_me else 1
-        mms_values["m_type"] = 128 if sent_by_me else 132
+        # Handle images
+        images = message.find_all("img")
+        image_parts = ""
+        if images:
+            for image in images:
+                image_filename = image["src"]
+                # Each image found should only match a single file
+                image_path = list(Path.cwd().glob(f"**/{image_filename}*"))
+                assert (
+                    len(image_path) == 1
+                ), "Multiple potential matching images found. Unhandled. Images: f{image_path!r}"
+                image_path = image_path[0]
+                print(image_path.resolve())
+                image_parts += (
+                    f'    <part ct="text/plain" seq="0" text="{image_path}"/> \n'
+                )
+
+        # type = get_message_type(message)
+        message_text = get_message_text(message)
+        time = get_time_unix(message)
+        participants_xml = ""
+        msg_box = 2 if sent_by_me else 1
+        m_type = 128 if sent_by_me else 132
 
         for participant in participants:
             participant_is_sender = participant == sender or (
@@ -108,22 +133,23 @@ def write_mms_messages(participants_raw, messages_raw):
                 "number": participant,
                 "code": 137 if participant_is_sender else 151,
             }
-            mms_values["participants_xml"] += (
+            participants_xml += (
                 '    <addr address="%(number)s" charset="106" type="%(code)s"/> \n'
                 % participant_values
             )
 
         mms_text = (
-            '<mms address="%(participants)s" ct_t="application/vnd.wap.multipart.related" '
-            'date="%(time)s" m_type="%(m_type)s" msg_box="%(msg_box)s" read="1" '
+            f'<mms address="{participants_text}" ct_t="application/vnd.wap.multipart.related" '
+            f'date="{time}" m_type="{m_type}" msg_box="{msg_box}" read="1" '
             'rr="129" seen="1" sub_id="-1" text_only="1"> \n'
             "  <parts> \n"
-            '    <part ct="text/plain" seq="0" text="%(message)s"/> \n'
-            "  </parts> \n"
+            f'    <part ct="text/plain" seq="0" text="{message_text}"/> \n'
+            + image_parts
+            + "  </parts> \n"
             "  <addrs> \n"
-            "%(participants_xml)s"
+            f"{participants_xml}"
             "  </addrs> \n"
-            "</mms> \n" % mms_values
+            "</mms> \n"
         )
 
         sms_backup_file.write(mms_text)
