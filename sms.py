@@ -3,9 +3,7 @@ import re
 import os
 import phonenumbers
 import dateutil.parser
-import time, datetime
-from calendar import timegm
-import warnings
+import time
 from io import open  # adds emoji support
 
 sms_backup_filename = "./gvoice-all.xml"
@@ -193,7 +191,7 @@ def get_participant_phone_numbers(participants_raw):
     for participant_set in participants_raw:
         # print(participant_set)
         for participant in participant_set:
-            print(participant)
+            # print(participant)
             if not hasattr(participant, "a"):
                 continue
 
@@ -215,7 +213,8 @@ def get_time_unix(message):
     time_raw = message.find(class_="dt")
     ymdhms = time_raw["title"]
     time_obj = dateutil.parser.isoparse(ymdhms)
-    mstime = timegm(time_obj.timetuple()) * 1000 + time_obj.microsecond / 1000
+    # print(time_obj)
+    mstime = time.mktime(time_obj.timetuple()) * 1000
     return int(mstime)
 
 
