@@ -157,6 +157,14 @@ def write_mms_messages(file, participants_raw, messages_raw):
                                     f"**/*{image_filename}*.{supported_type}"
                                 )
                             )
+                            # Sometimes there's extra cruft in the filename in the HTML. So try to
+                            # match a subset of it.
+                            if len(image_path) > 1:
+                                for ip in image_path:
+                                    if ip.stem in original_image_filename:
+                                        image_path = [ip]
+                                        break
+
                             if len(image_path) == 1:
                                 break
                         if len(image_path) == 1:
