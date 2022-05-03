@@ -1,4 +1,5 @@
 from bs4 import BeautifulSoup
+import html
 import re
 import os
 import phonenumbers
@@ -168,17 +169,15 @@ def get_message_type(message):  # author_raw = messages_raw[i].cite
 
 
 def get_message_text(message):
-    # message_text = BeautifulSoup(message.find('q').text,'html.parser').text
-    # if 'b2b' in message_text:
-    #     images = message.find_all('img')
-    #     if images:
-    #         print(images[0]['src'])
-    return (
-        BeautifulSoup(message.find("q").text, "html.parser")
-        .prettify(formatter="html")
-        .strip()
-        .replace('"', "'")
-    )
+    # print(message)
+
+    # Attempt to properly translate newlines. Might want to translate other HTML here, too.
+    # This feels very hacky, but couldn't come up with something better.
+    message_text = html.escape(
+        str(message.find("q")).strip()[3:-4].replace("<br/>", "((br/))"), quote=True
+    ).replace("((br/))", "&#10;")
+
+    return message_text
 
 
 def get_mms_sender(message):
