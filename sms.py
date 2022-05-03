@@ -59,7 +59,7 @@ def main():
 
 def write_sms_messages(file, messages_raw):
     fallback_number = 0
-    title_has_number = re.search(r"(^\+*[0-9]+)", file)
+    title_has_number = re.search(r"(^\+[0-9]+)", Path(file).name)
     if title_has_number:
         fallback_number = title_has_number.group()
 
@@ -110,10 +110,21 @@ def write_mms_messages(participants_raw, messages_raw):
             for image in images:
                 image_filename = image["src"]
                 # Each image found should only match a single file
-                image_path = list(Path.cwd().glob(f"**/{image_filename}*"))
+                image_path = list(Path.cwd().glob(f"**/*{image_filename}*"))
+
+                if len(image_path) == 0:
+                    # Sometimes the first word doesn't match (eg it is a phone number instead of a
+                    # contact name) so try again without the first word
+                    image_filename = "-".join(image_filename.split("-")[1:])
+                    image_path = list(Path.cwd().glob(f"**/*{image_filename}*"))
+
+                assert (
+                    len(image_path) != 0
+                ), f"No matching images found. File name: {image_filename}"
                 assert (
                     len(image_path) == 1
-                ), f"Multiple potential matching images found. Unhandled. Images: {image_path!r}"
+                ), f"Multiple potential matching images found. Images: {[x for x in image_path]!r}"
+
                 image_path = image_path[0]
                 image_type = image_path.suffix[1:]
                 image_type = "jpeg" if image_type == "jpg" else image_type
@@ -198,11 +209,15 @@ def get_first_phone_number(messages, fallback_number):
             continue
 
         sender_data = author_raw.cite
+        phonenumber_text = sender_data.a["href"][4:]
+        # Sometimes the first entry is missing a phone number
+        if not phonenumber_text:
+            continue
 
         try:
-            phone_number = phonenumbers.parse(sender_data.a["href"][4:], None)
+            phone_number = phonenumbers.parse(phonenumber_text, None)
         except phonenumbers.phonenumberutil.NumberParseException:
-            return sender_data.a["href"][4:]
+            return phonenumber_text
 
         return format_number(phone_number)
 
