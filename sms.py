@@ -117,6 +117,12 @@ def write_mms_messages(file, participants_raw, messages_raw):
                 image_path = list(Path.cwd().glob(f"**/*{image_filename}*"))
 
                 if len(image_path) == 0:
+                    # Sometimes the first word doesn't match (eg it is a phone number instead of a
+                    # contact name) so try again without the first word
+                    image_filename = "-".join(original_image_filename.split("-")[1:])
+                    image_path = list(Path.cwd().glob(f"**/*{image_filename}*"))
+
+                if len(image_path) == 0:
                     # Sometimes the image filename matches the message filename instead of the
                     # filename in the HTML. And sometimes the message filenames are repeated, eg
                     # filefoo(0).html, filefoo(1).html, etc., but the image filename matches just
@@ -134,12 +140,6 @@ def write_mms_messages(file, participants_raw, messages_raw):
                                 break
                         if len(image_path) == 1:
                             break
-
-                if len(image_path) == 0:
-                    # Sometimes the first word doesn't match (eg it is a phone number instead of a
-                    # contact name) so try again without the first word
-                    image_filename = "-".join(original_image_filename.split("-")[1:])
-                    image_path = list(Path.cwd().glob(f"**/*{image_filename}*"))
 
                 assert (
                     len(image_path) != 0
@@ -213,9 +213,7 @@ def get_message_type(message):  # author_raw = messages_raw[i].cite
 def get_message_text(message):
     # Attempt to properly translate newlines. Might want to translate other HTML here, too.
     # This feels very hacky, but couldn't come up with something better.
-    message_text = html.escape(
-        str(message.find("q")).strip()[3:-4].replace("<br/>", "((br/))"), quote=True
-    ).replace("((br/))", "&#10;")
+    message_text = str(message.find("q")).strip()[3:-4].replace("<br/>", "&#10;")
 
     return message_text
 
@@ -250,7 +248,7 @@ def get_first_phone_number(messages, fallback_number):
         try:
             phone_number = phonenumbers.parse(phonenumber_text, None)
         except phonenumbers.phonenumberutil.NumberParseException:
-            return phonenumber_text
+            return phonenumber_text, sender_data
 
         # sender_data can be used as participant for mms
         return format_number(phone_number), sender_data
