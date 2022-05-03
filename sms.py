@@ -1,10 +1,11 @@
-from bs4 import BeautifulSoup
+import dateutil.parser
 import html
-import re
 import os
 import phonenumbers
-import dateutil.parser
+import re
 import time
+from base64 import b64encode
+from bs4 import BeautifulSoup
 from io import open  # adds emoji support
 from pathlib import Path
 
@@ -112,14 +113,22 @@ def write_mms_messages(participants_raw, messages_raw):
                 image_path = list(Path.cwd().glob(f"**/{image_filename}*"))
                 assert (
                     len(image_path) == 1
-                ), "Multiple potential matching images found. Unhandled. Images: f{image_path!r}"
+                ), f"Multiple potential matching images found. Unhandled. Images: {image_path!r}"
                 image_path = image_path[0]
-                print(image_path.resolve())
+                image_type = image_path.suffix[1:]
+                image_type = "jpeg" if image_type == "jpg" else image_type
+
+                with image_path.open("rb") as fb:
+                    image_bytes = fb.read()
+                byte_string = f"{b64encode(image_bytes)}"
+
                 image_parts += (
-                    f'    <part ct="text/plain" seq="0" text="{image_path}"/> \n'
+                    f'    <part seq="0" ct="image/{image_type}" name="{image_path.name}" '
+                    f'chset="null" cd="null" fn="null" cid="&lt;{image_path.name}&gt;" '
+                    f'cl="{image_path.name}" ctt_s="null" ctt_t="null" text="null" '
+                    f'data="{byte_string[2:-1]}" />\n'
                 )
 
-        # type = get_message_type(message)
         message_text = get_message_text(message)
         time = get_time_unix(message)
         participants_xml = ""
@@ -169,8 +178,6 @@ def get_message_type(message):  # author_raw = messages_raw[i].cite
 
 
 def get_message_text(message):
-    # print(message)
-
     # Attempt to properly translate newlines. Might want to translate other HTML here, too.
     # This feels very hacky, but couldn't come up with something better.
     message_text = html.escape(
@@ -207,16 +214,10 @@ def get_first_phone_number(messages, fallback_number):
 
 
 def get_participant_phone_numbers(participants_raw):
-    # Having your own number in the participants list does not appear to be a requirement
-    default_participants = [
-        "Me"
-    ]  # May require adding a contact for "Me" to your phone, with your current number
     participants = []
 
     for participant_set in participants_raw:
-        # print(participant_set)
         for participant in participant_set:
-            # print(participant)
             if not hasattr(participant, "a"):
                 continue
 
@@ -238,7 +239,6 @@ def get_time_unix(message):
     time_raw = message.find(class_="dt")
     ymdhms = time_raw["title"]
     time_obj = dateutil.parser.isoparse(ymdhms)
-    # print(time_obj)
     mstime = time.mktime(time_obj.timetuple()) * 1000
     return int(mstime)
 
