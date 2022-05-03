@@ -69,6 +69,18 @@ def write_sms_messages(file, messages_raw):
     phone_number, participant_raw = get_first_phone_number(
         messages_raw, fallback_number
     )
+    if phone_number == 0:
+        # Search similarly named files for a fallback number. This is desperate and expensive, but
+        # hopefully rare.
+        file_prefix = "-".join(Path(file).stem.split("-")[0:1])
+        for fallback_file in Path.cwd().glob(f"**/{file_prefix}*.html"):
+            with fallback_file.open("r", encoding="utf8") as ff:
+                soup = BeautifulSoup(ff, "html.parser")
+            messages_raw_ff = soup.find_all(class_="message")
+            phone_number, participant_raw = get_first_phone_number(messages_raw_ff, 0)
+            if phone_number != 0:
+                break
+
     sms_values = {"phone": phone_number}
 
     sms_backup_file = open(sms_backup_filename, "a", encoding="utf8")
@@ -273,10 +285,15 @@ def get_participant_phone_numbers(participants_raw):
             if not hasattr(participant, "a"):
                 continue
 
+            phone_number_text = participant.a["href"][4:]
+            assert (
+                phone_number_text != "" and phone_number_text != "0"
+            ), "Could not find participant phone number. Usually caused by empty tel field."
             try:
-                phone_number = phonenumbers.parse(participant.a["href"][4:], None)
+                phone_number = phonenumbers.parse(phone_number_text, None)
             except phonenumbers.phonenumberutil.NumberParseException:
-                participants.push(participant.a["href"][4:])
+                phone_number = phone_number_text
+                participants.append(phone_number_text)
 
             participants.append(format_number(phone_number))
 
