@@ -117,13 +117,20 @@ def write_mms_messages(file, participants_raw, messages_raw):
 
                 if len(image_path) == 0:
                     # Sometimes the image filename matches the message filename instead of the
-                    # filename in the HTML
-                    image_filename = Path(file).stem
-                    # Have to guess at the file extension in this case
-                    for supported_type in supported_types:
-                        image_path = list(
-                            Path.cwd().glob(f"**/*{image_filename}.{supported_type}*")
-                        )
+                    # filename in the HTML. And sometimes the message filenames are repeated, eg
+                    # filefoo(0).html, filefoo(1).html, etc., but the image filename matches just
+                    # the base ("filefoo" in this example).
+                    image_filenames = [Path(file).stem, Path(file).stem.split("(")[0]]
+                    for image_filename in image_filenames:
+                        # Have to guess at the file extension in this case
+                        for supported_type in supported_types:
+                            image_path = list(
+                                Path.cwd().glob(
+                                    f"**/*{image_filename}.{supported_type}*"
+                                )
+                            )
+                            if len(image_path) == 1:
+                                break
                         if len(image_path) == 1:
                             break
 
