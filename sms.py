@@ -72,7 +72,7 @@ def write_sms_messages(file, messages_raw):
             # Sometimes these messages don't fill out the tel field. Use a sensible default.
             participants_raw = message.find_all("cite")
             for participant in participants_raw:
-                if not participant.a["href"][4:0]:
+                if participant.a["href"][4:] == "":
                     participant.a["href"] = f'tel:{sms_values["phone"]}'
 
             write_mms_messages([participants_raw], [message])
@@ -211,7 +211,7 @@ def get_first_phone_number(messages, fallback_number):
         sender_data = author_raw.cite
         phonenumber_text = sender_data.a["href"][4:]
         # Sometimes the first entry is missing a phone number
-        if not phonenumber_text:
+        if phonenumber_text == "":
             continue
 
         try:
