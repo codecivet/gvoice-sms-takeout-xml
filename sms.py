@@ -41,6 +41,9 @@ def main():
             soup = BeautifulSoup(sms_file, "html.parser")
 
             messages_raw = soup.find_all(class_="message")
+            # Skip files with no messages
+            if not len(messages_raw):
+                continue
 
             num_sms += len(messages_raw)
 
@@ -63,19 +66,16 @@ def write_sms_messages(file, messages_raw):
     if title_has_number:
         fallback_number = title_has_number.group()
 
-    sms_values = {"phone": get_first_phone_number(messages_raw, fallback_number)}
+    phone_number, participant_raw = get_first_phone_number(
+        messages_raw, fallback_number
+    )
+    sms_values = {"phone": phone_number}
 
     sms_backup_file = open(sms_backup_filename, "a", encoding="utf8")
     for message in messages_raw:
         # Check if message has an image in it and treat as mms if so
         if message.find_all("img"):
-            # Sometimes these messages don't fill out the tel field. Use a sensible default.
-            participants_raw = message.find_all("cite")
-            for participant in participants_raw:
-                if participant.a["href"][4:] == "":
-                    participant.a["href"] = f'tel:{sms_values["phone"]}'
-
-            write_mms_messages(file, [participants_raw], [message])
+            write_mms_messages(file, [[participant_raw]], [message])
             continue
 
         sms_values["type"] = get_message_type(message)
@@ -100,7 +100,8 @@ def write_mms_messages(file, participants_raw, messages_raw):
     participants_text = "~".join(participants)
 
     for message in messages_raw:
-        sender = get_mms_sender(message)
+        # Sometimes the sender tel field is blank. Try to guess the sender from the participants.
+        sender = get_mms_sender(message, participants)
         sent_by_me = sender not in participants
 
         # Handle images
@@ -126,7 +127,7 @@ def write_mms_messages(file, participants_raw, messages_raw):
                         for supported_type in supported_types:
                             image_path = list(
                                 Path.cwd().glob(
-                                    f"**/*{image_filename}.{supported_type}*"
+                                    f"**/*{image_filename}*.{supported_type}"
                                 )
                             )
                             if len(image_path) == 1:
@@ -167,7 +168,6 @@ def write_mms_messages(file, participants_raw, messages_raw):
         participants_xml = ""
         msg_box = 2 if sent_by_me else 1
         m_type = 128 if sent_by_me else 132
-
         for participant in participants:
             participant_is_sender = participant == sender or (
                 sent_by_me and participant == "Me"
@@ -220,8 +220,16 @@ def get_message_text(message):
     return message_text
 
 
-def get_mms_sender(message):
-    return format_number(phonenumbers.parse(message.cite.a["href"][4:], None))
+def get_mms_sender(message, participants):
+    number_text = message.cite.a["href"][4:]
+    if number_text != "":
+        number = format_number(phonenumbers.parse(number_text, None))
+    else:
+        assert (
+            len(participants) == 1
+        ), "Unable to determine sender in mms with multiple participants"
+        number = participants[0]
+    return number
 
 
 def get_first_phone_number(messages, fallback_number):
@@ -231,6 +239,9 @@ def get_first_phone_number(messages, fallback_number):
             continue
 
         sender_data = author_raw.cite
+        # Skip if first number is Me
+        if sender_data.text == "Me":
+            continue
         phonenumber_text = sender_data.a["href"][4:]
         # Sometimes the first entry is missing a phone number
         if phonenumber_text == "":
@@ -241,13 +252,19 @@ def get_first_phone_number(messages, fallback_number):
         except phonenumbers.phonenumberutil.NumberParseException:
             return phonenumber_text
 
-        return format_number(phone_number)
+        # sender_data can be used as participant for mms
+        return format_number(phone_number), sender_data
 
     # fallback case, use number from filename
-    if fallback_number == 0 or len(fallback_number) < 7:
-        return fallback_number
-    else:
-        return format_number(phonenumbers.parse(fallback_number, None))
+    if fallback_number != 0 and len(fallback_number) >= 7:
+        fallback_number = format_number(phonenumbers.parse(fallback_number, None))
+    # Create dummy participant
+    sender_data = BeautifulSoup(
+        f'<cite class="sender vcard"><a class="tel" href="tel:{fallback_number}"><abbr class="fn" '
+        'title="">Foo</abbr></a></cite>',
+        features="html.parser",
+    )
+    return fallback_number, sender_data
 
 
 def get_participant_phone_numbers(participants_raw):
