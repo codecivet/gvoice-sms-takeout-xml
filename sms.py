@@ -46,7 +46,7 @@ def main():
 
             if is_group_conversation:
                 participants_raw = soup.find_all(class_="participants")
-                write_mms_messages(participants_raw, messages_raw)
+                write_mms_messages(file, participants_raw, messages_raw)
             else:
                 write_sms_messages(file, messages_raw)
 
@@ -75,7 +75,7 @@ def write_sms_messages(file, messages_raw):
                 if participant.a["href"][4:] == "":
                     participant.a["href"] = f'tel:{sms_values["phone"]}'
 
-            write_mms_messages([participants_raw], [message])
+            write_mms_messages(file, [participants_raw], [message])
             continue
 
         sms_values["type"] = get_message_type(message)
@@ -93,7 +93,7 @@ def write_sms_messages(file, messages_raw):
     sms_backup_file.close()
 
 
-def write_mms_messages(participants_raw, messages_raw):
+def write_mms_messages(file, participants_raw, messages_raw):
     sms_backup_file = open(sms_backup_filename, "a", encoding="utf8")
 
     participants = get_participant_phone_numbers(participants_raw)
@@ -108,19 +108,34 @@ def write_mms_messages(participants_raw, messages_raw):
         image_parts = ""
         if images:
             for image in images:
+                # I have only encountered jpg and gif, but I have read that GV can ecxport png
+                supported_types = ["jpg", "png", "gif"]
                 image_filename = image["src"]
+                original_image_filename = image_filename
                 # Each image found should only match a single file
                 image_path = list(Path.cwd().glob(f"**/*{image_filename}*"))
 
                 if len(image_path) == 0:
+                    # Sometimes the image filename matches the message filename instead of the
+                    # filename in the HTML
+                    image_filename = Path(file).stem
+                    # Have to guess at the file extension in this case
+                    for supported_type in supported_types:
+                        image_path = list(
+                            Path.cwd().glob(f"**/*{image_filename}.{supported_type}*")
+                        )
+                        if len(image_path) == 1:
+                            break
+
+                if len(image_path) == 0:
                     # Sometimes the first word doesn't match (eg it is a phone number instead of a
                     # contact name) so try again without the first word
-                    image_filename = "-".join(image_filename.split("-")[1:])
+                    image_filename = "-".join(original_image_filename.split("-")[1:])
                     image_path = list(Path.cwd().glob(f"**/*{image_filename}*"))
 
                 assert (
                     len(image_path) != 0
-                ), f"No matching images found. File name: {image_filename}"
+                ), f"No matching images found. File name: {original_image_filename}"
                 assert (
                     len(image_path) == 1
                 ), f"Multiple potential matching images found. Images: {[x for x in image_path]!r}"
