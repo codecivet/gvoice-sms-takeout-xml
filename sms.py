@@ -126,7 +126,16 @@ def write_mms_messages(file, participants_raw, messages_raw):
                 image_filename = image["src"]
                 original_image_filename = image_filename
                 # Each image found should only match a single file
-                image_path = list(Path.cwd().glob(f"**/*{image_filename}*"))
+                image_path = list(Path.cwd().glob(f"**/*{image_filename}"))
+
+                if len(image_path) == 0:
+                    # Sometimes they just forget the extension
+                    for supported_type in supported_types:
+                        image_path = list(
+                            Path.cwd().glob(f"**/*{image_filename}.{supported_type}")
+                        )
+                        if len(image_path) == 1:
+                            break
 
                 if len(image_path) == 0:
                     # Sometimes the first word doesn't match (eg it is a phone number instead of a
@@ -290,12 +299,11 @@ def get_participant_phone_numbers(participants_raw):
                 phone_number_text != "" and phone_number_text != "0"
             ), "Could not find participant phone number. Usually caused by empty tel field."
             try:
-                phone_number = phonenumbers.parse(phone_number_text, None)
+                participants.append(
+                    format_number(phonenumbers.parse(phone_number_text, None))
+                )
             except phonenumbers.phonenumberutil.NumberParseException:
-                phone_number = phone_number_text
                 participants.append(phone_number_text)
-
-            participants.append(format_number(phone_number))
 
     return participants
 
