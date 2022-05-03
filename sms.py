@@ -69,15 +69,29 @@ def write_sms_messages(file, messages_raw):
     phone_number, participant_raw = get_first_phone_number(
         messages_raw, fallback_number
     )
+
+    # Search similarly named files for a fallback number. This is desperate and expensive, but
+    # hopefully rare.
     if phone_number == 0:
-        # Search similarly named files for a fallback number. This is desperate and expensive, but
-        # hopefully rare.
         file_prefix = "-".join(Path(file).stem.split("-")[0:1])
         for fallback_file in Path.cwd().glob(f"**/{file_prefix}*.html"):
             with fallback_file.open("r", encoding="utf8") as ff:
                 soup = BeautifulSoup(ff, "html.parser")
             messages_raw_ff = soup.find_all(class_="message")
             phone_number, participant_raw = get_first_phone_number(messages_raw_ff, 0)
+            if phone_number != 0:
+                break
+
+    # Start looking in the Placed/Received files for a fallback number
+    if phone_number == 0:
+        file_prefix = f'{Path(file).stem.split("-")[0]}- '
+        for fallback_file in Path.cwd().glob(f"**/{file_prefix}*.html"):
+            with fallback_file.open("r", encoding="utf8") as ff:
+                soup = BeautifulSoup(ff, "html.parser")
+            vcards = soup.find_all(class_="contributor vcard")
+            for vcard in vcards:
+                phone_number_ff = vcard.a["href"][4:]
+            phone_number, participant_raw = get_first_phone_number([], phone_number_ff)
             if phone_number != 0:
                 break
 
