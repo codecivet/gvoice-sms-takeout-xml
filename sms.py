@@ -1,5 +1,4 @@
 import dateutil.parser
-import html
 import os
 import phonenumbers
 import re
@@ -8,6 +7,8 @@ from base64 import b64encode
 from bs4 import BeautifulSoup
 from io import open  # adds emoji support
 from pathlib import Path
+from shutil import copyfileobj, move
+from tempfile import NamedTemporaryFile
 
 sms_backup_filename = "./gvoice-all.xml"
 sms_backup_path = Path(sms_backup_filename)
@@ -25,11 +26,6 @@ def main():
         for file in files:
             sms_filename = os.path.join(subdir, file)
 
-            try:
-                sms_file = open(sms_filename, "r", encoding="utf8")
-            except FileNotFoundError:
-                continue
-
             if os.path.splitext(sms_filename)[1] != ".html":
                 # print(sms_filename,"- skipped")
                 continue
@@ -38,7 +34,8 @@ def main():
 
             is_group_conversation = re.match(r"(^Group Conversation)", file)
 
-            soup = BeautifulSoup(sms_file, "html.parser")
+            with open(sms_filename, "r", encoding="utf8") as sms_file:
+                soup = BeautifulSoup(sms_file, "html.parser")
 
             messages_raw = soup.find_all(class_="message")
             # Skip files with no messages
@@ -89,6 +86,7 @@ def write_sms_messages(file, messages_raw):
             with fallback_file.open("r", encoding="utf8") as ff:
                 soup = BeautifulSoup(ff, "html.parser")
             vcards = soup.find_all(class_="contributor vcard")
+            phone_number_ff = 0
             for vcard in vcards:
                 phone_number_ff = vcard.a["href"][4:]
             phone_number, participant_raw = get_first_phone_number([], phone_number_ff)
@@ -343,16 +341,15 @@ def get_time_unix(message):
 
 
 def write_header(filename, numsms):
-    backup_file = open(filename, "r", encoding="utf8")
-    backup_text = backup_file.read()
-    backup_file.close()
-
-    backup_file = open(filename, "w", encoding="utf8")
-    backup_file.write("<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>\n")
-    backup_file.write("<!--Converted from GV Takeout data -->\n")
-    backup_file.write('<smses count="' + str(numsms) + '">\n')
-    backup_file.write(backup_text)
-    backup_file.close()
+    # Prepend header in memory efficient manner since the output file can be huge
+    with NamedTemporaryFile(dir=Path.cwd(), delete=False) as backup_temp:
+        backup_temp.write(b"<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>\n")
+        backup_temp.write(b"<!--Converted from GV Takeout data -->\n")
+        backup_temp.write(bytes(f'<smses count="{str(numsms)}">\n', encoding="utf8"))
+        with open(filename, "rb") as backup_file:
+            copyfileobj(backup_file, backup_temp)
+    # Overwrite output file with temp file
+    move(backup_temp.name, filename)
 
 
 main()
